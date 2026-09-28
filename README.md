@@ -20,8 +20,10 @@ Universal arm64 + x86_64, minimum macOS 10.13. Configures, builds VST3/AU/Standa
 suite, runs the tests, pluginval (strictness 10) and auval, and writes `dist/BOUNCE-1.2.0-macOS.zip`.
 Built plug-ins are also copied into `~/Library/Audio/Plug-Ins`.
 
-Windows: `powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1` (VS 2022, fetches the
-WebView2 SDK NuGet package if missing). **Written but never run — not tested.**
+Windows: built by CI — `.github/workflows/windows.yml` (Actions → Windows → Run workflow) compiles with
+MSVC, runs the full test suite, packs an Inno Setup installer, installs and uninstalls it on the runner,
+and uploads `BOUNCE-<version>-Windows-Setup.zip`; `packaging/fetch-windows-ci.sh` downloads it into
+`dist/`. Local alternative: `scripts\build-windows.ps1` (VS 2022; not run).
 
 Manual:
 
@@ -148,7 +150,9 @@ Screenshots of the running editor: [docs/screenshots](docs/screenshots).
 ## Not tested / unfinished
 
 - **Cubase 15 — not tested**: insert, automation, preset save/reload, looped playback, offline export, listening.
-- **Windows — not tested**: never compiled; `scripts/build-windows.ps1` is unrun; WebView2 on a fresh machine unverified.
+- **Windows**: compiled and tested under MSVC in CI (843/843, run 36380037609), installer installed and
+  removed cleanly on the runner. Not yet opened in Cubase on Windows; the WebView UI on a real Windows desktop
+  is unverified.
 - AU tested only with auval/pluginval, not inside Logic.
 - No user-preset save (factory presets and host presets only).
 - Code signing / notarisation not done.
