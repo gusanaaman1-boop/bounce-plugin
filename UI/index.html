@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BOUNCE</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="stage">
+
+  <!-- ============================================================ top strip -->
+  <header class="top">
+    <div class="brand" aria-label="BOUNCE">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="9.2" cy="12" r="6.6" class="ring a"/>
+        <circle cx="14.8" cy="12" r="6.6" class="ring b"/>
+      </svg>
+      <span class="wordmark">BOUNCE</span><span class="reg">®</span>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="preset">
+      <div class="caprow">
+        <span class="cap">PRESET</span><span class="cap presetCat" id="presetCat"></span>
+        <button class="step" id="presetPrev" title="Previous preset" aria-label="Previous preset">‹</button>
+        <button class="step" id="presetNext" title="Next preset" aria-label="Next preset">›</button>
+      </div>
+      <button class="presetName" id="presetBtn" title="Factory presets"><span id="presetName">STRAIGHT FOUR</span><i id="presetMod" title="Edited"></i>
+        <svg class="chev" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg></button>
+    </div>
+
+    <div class="cluster">
+      <div class="box stepper" title="Repeats">
+        <button id="repDown" aria-label="Fewer repeats">−</button>
+        <span id="repVal">04</span>
+        <button id="repUp" aria-label="More repeats">+</button>
+      </div>
+      <button class="box rate" id="rateBtn" title="Repeat rate">
+        <span id="rateVal">1/16</span>
+        <svg class="chev" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+      </button>
+      <button class="box icon" id="powerBtn" title="Enable" aria-label="Enable">
+        <svg viewBox="0 0 16 16"><path d="M8 2.2v5.2"/><path d="M4.6 4.4a5 5 0 1 0 6.8 0"/></svg>
+      </button>
+      <button class="box icon" id="moreBtn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.35"/><circle cx="8" cy="8" r="1.35"/><circle cx="12.5" cy="8" r="1.35"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============================================================ repeat path -->
+  <section class="graph" id="graph">
+    <div class="ghead">
+      <span class="cap">REPEAT PATH</span><span class="dot">•</span><span id="motionWord" class="mint">EVEN</span><span id="modeWord"></span>
+      <span class="right">
+        <span id="badges"></span>
+        <span id="tempo"><i class="led"></i><span id="tempoText">120 BPM / SYNC</span></span>
+      </span>
+    </div>
+    <svg id="plot" width="512" height="108" viewBox="0 0 512 108"></svg>
+    <div class="gfoot">
+      <span class="cap">INPUT</span>
+      <span class="right cap" id="footRight">LAST HIT 500 ms</span>
+    </div>
+  </section>
+
+  <!-- ============================================================ controls -->
+  <section class="bottom">
+    <div class="motion">
+      <span class="label">MOTION</span>
+      <span class="end">SLOW DOWN</span>
+      <div class="slider bipolar mintc" id="s_motion" tabindex="0" role="slider" aria-label="Motion"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div>
+      <span class="end">ACCELERATE</span>
+      <span class="value mint" id="v_motion">0</span>
+    </div>
+    <div class="trio">
+      <div class="ctl">
+        <div class="row"><span class="label">AMOUNT</span><span class="value" id="v_amount">35%</span></div>
+        <div class="slider champc" id="s_amount" tabindex="0" role="slider" aria-label="Amount"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div>
+      </div>
+      <div class="ctl">
+        <div class="row"><span class="label">DECAY</span><span class="value" id="v_decay">−18 dB</span></div>
+        <div class="slider champc" id="s_decay" tabindex="0" role="slider" aria-label="Decay"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div>
+      </div>
+      <div class="ctl">
+        <div class="row"><span class="label">PITCH PATH</span><span class="value" id="v_pitch">0 st</span></div>
+        <div class="slider bipolar lavc" id="s_pitch" tabindex="0" role="slider" aria-label="Pitch path"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ popovers -->
+  <div class="menu" id="presetMenu"></div>
+  <div class="menu" id="rateMenu"></div>
+
+  <div class="pop settings" id="settings">
+    <div class="phead"><span class="cap">SETTINGS</span><span class="diag" id="diag"></span></div>
+    <div class="srow"><span class="label">SOURCE</span><div class="slider mintc" id="s_source" tabindex="0" role="slider" aria-label="Source length"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value" id="v_source"></span></div>
+    <div class="srow"><span class="label">TIGHT</span><div class="slider mintc" id="s_tight" tabindex="0" role="slider" aria-label="Tight"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value" id="v_tight"></span></div>
+    <div class="srow"><span class="label">THRESHOLD</span><div class="slider mintc" id="s_threshold" tabindex="0" role="slider" aria-label="Threshold"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value" id="v_threshold"></span></div>
+    <div class="srow"><span class="label">RETRIGGER</span><div class="slider mintc" id="s_retrigger" tabindex="0" role="slider" aria-label="Retrigger"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value" id="v_retrigger"></span></div>
+    <div class="srow"><span class="label">FREE RATE</span><div class="slider mintc" id="s_free" tabindex="0" role="slider" aria-label="Free rate"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value" id="v_free"></span></div>
+    <div class="srow"><span class="label">OUTPUT</span><div class="slider bipolar champc" id="s_output" tabindex="0" role="slider" aria-label="Output"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value" id="v_output"></span></div>
+    <div class="toggles">
+      <button class="chip" id="t_choke" title="A new hit cuts the previous repeats">CHOKE</button>
+      <button class="chip" id="t_sync">SYNC</button>
+      <button class="chip" id="t_wet">WET ONLY</button>
+      <button class="chip" id="t_snap">SNAP</button>
+      <button class="chip action" id="resetPattern">RESET PATTERN</button>
+    </div>
+  </div>
+
+  <div class="pop tap" id="tapPop">
+    <div class="phead"><span class="cap" id="tapTitle">TAP 01</span><button class="chip small" id="tapOn">ON</button></div>
+    <div class="trow"><span class="label">TIME</span><span class="value mint" id="tapTime" tabindex="0" title="Drag or use arrows">125 ms</span></div>
+    <div class="trow"><span class="label">LEVEL</span><span class="value champ" id="tapLevel" tabindex="0" title="Drag or use arrows">0.0 dB</span></div>
+    <div class="trow"><span class="label">PITCH</span><div class="slider bipolar lavc" id="s_tapPitch" tabindex="0" role="slider" aria-label="Tap pitch"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value lav" id="tapPitch">0 st</span></div>
+  </div>
+
+  <div id="fatal"></div>
+</div>
+
+<script>
+  // A failed module import leaves every control at its markup default with no explanation;
+  // say so on screen instead.
+  addEventListener("error", e => {
+    const f = document.getElementById("fatal");
+    f.style.display = "flex";
+    f.textContent = "BOUNCE interface failed to load: " + (e.message || e.filename || "unknown error");
+  }, true);
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

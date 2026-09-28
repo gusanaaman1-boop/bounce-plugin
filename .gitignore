@@ -1,0 +1,6 @@
+build/
+build-*/
+dist/
+.DS_Store
+# The owner's internal build spec stays private.
+docs/SPEC.md

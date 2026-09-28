@@ -1,0 +1,166 @@
+#  BOUNCE - the Windows build, on a machine that has a Windows compiler.
+#
+#  Builds the VST3 and the standalone with MSVC, refuses to go on unless the whole test suite
+#  passes under MSVC, packs an Inno Setup installer (free), installs it for real on the runner,
+#  checks what landed on disk, uninstalls it and checks nothing is left.
+#
+#  Nothing starts by itself: run it from the Actions tab ("Run workflow") or push a v* tag.
+#  GitHub-hosted runners are free on PUBLIC repositories only; "self-hosted" uses your own
+#  Windows machine. This project never pays for minutes, signing or anything else.
+
+name: Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Where to build"
+        type: choice
+        default: windows-2022
+        options: [windows-2022, windows-latest, self-hosted]
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # JUCE 9.0.0, pinned - the same commit the Mac build uses (~/JUCE).
+  JUCE_COMMIT: 857aab9c4eb3084af639a380a693dcec7d728b73
+  # The version JUCE 9's FindWebView2.cmake names in its own instructions.
+  WEBVIEW2_VERSION: 1.0.3485.44
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner || 'windows-2022' }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out BOUNCE
+        uses: actions/checkout@v4
+
+      # Into ./JUCE, CMakeLists' last fallback - never over a person's ~/JUCE.
+      - name: Check out JUCE (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ env.JUCE_COMMIT }}
+          path: JUCE
+          fetch-depth: 1
+
+      # The interface is a WebView. JUCE links WebView2 statically and will not configure
+      # without Microsoft's SDK package - a plain zip on nuget.org.
+      - name: Fetch the WebView2 SDK
+        shell: pwsh
+        run: |
+          $dir = "$pwd\deps\Microsoft.Web.WebView2.$env:WEBVIEW2_VERSION"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$env:WEBVIEW2_VERSION" -OutFile "$env:RUNNER_TEMP\wv2.zip"
+          Expand-Archive "$env:RUNNER_TEMP\wv2.zip" -DestinationPath $dir -Force
+          if (-not (Test-Path "$dir\build\native\include\WebView2.h")) { throw "WebView2 SDK did not unpack" }
+
+      - name: Read the version from CMakeLists
+        id: ver
+        shell: pwsh
+        run: |
+          $line = Select-String -Path CMakeLists.txt -Pattern '^project\(Bounce VERSION ([0-9.]+)' | Select-Object -First 1
+          if (-not $line) { throw "Could not read the version out of CMakeLists.txt" }
+          "version=$($line.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+                -DBOUNCE_JUCE_DIR="$pwd\JUCE" `
+                -DBOUNCE_COPY_AFTER_BUILD=OFF `
+                -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$pwd\deps"
+          if ($LASTEXITCODE -ne 0) { throw "configure failed" }
+
+      - name: Build the plug-in, the standalone and the test suite
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel `
+                --target Bounce_VST3 Bounce_Standalone BounceTests
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+
+      # Built is not the same as present: check the payload inside the bundle.
+      - name: Check the artefacts exist
+        shell: pwsh
+        run: |
+          $need = @(
+            "build\Bounce_artefacts\Release\VST3\BOUNCE.vst3\Contents\x86_64-win\BOUNCE.vst3",
+            "build\Bounce_artefacts\Release\Standalone\BOUNCE.exe"
+          )
+          $missing = @($need | Where-Object { -not (Test-Path $_) })
+          if ($missing.Count -gt 0) {
+            $missing | ForEach-Object { Write-Host "  MISSING  $_" }
+            throw "the build reported success but artefacts are missing"
+          }
+          $need | ForEach-Object { Write-Host "  ok  $_" }
+
+      - name: Test suite (pattern, engine, state) under MSVC
+        shell: pwsh
+        run: |
+          .\build\BounceTests_artefacts\Release\BounceTests.exe
+          if ($LASTEXITCODE -ne 0) { throw "tests failed" }
+
+      - name: Find or install Inno Setup 6
+        id: inno
+        shell: pwsh
+        run: |
+          $paths = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "${env:ProgramFiles}\Inno Setup 6\ISCC.exe")
+          $iscc = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { choco install innosetup --no-progress -y; $iscc = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1 }
+          if (-not $iscc) { throw "Inno Setup 6 is not available." }
+          "iscc=$iscc" >> $env:GITHUB_OUTPUT
+
+      - name: Pack the installer
+        shell: pwsh
+        run: |
+          $src  = "$pwd\build\Bounce_artefacts\Release"
+          $icon = "$pwd\build\Bounce_artefacts\JuceLibraryCode\icon.ico"
+          $a = @("/Q", "/DAppVersion=${{ steps.ver.outputs.version }}", "/DSrcRoot=$src")
+          if (Test-Path $icon) { $a += "/DBnIcon=$icon" }
+          $a += "packaging\BOUNCE.iss"
+          & "${{ steps.inno.outputs.iscc }}" @a
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup refused (exit $LASTEXITCODE)" }
+          $exe = "dist\BOUNCE-${{ steps.ver.outputs.version }}-windows.exe"
+          if ((Get-Item $exe).Length -lt 2MB) { throw "the installer is empty" }
+
+      # Built is not the same as working: install it for real, check what landed,
+      # uninstall it, check nothing is left.
+      - name: Install and uninstall it, for real
+        shell: pwsh
+        run: |
+          $exe = "dist\BOUNCE-${{ steps.ver.outputs.version }}-windows.exe"
+          Start-Process -FilePath $exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          $vst3 = "${env:CommonProgramFiles}\VST3\BOUNCE.vst3\Contents\x86_64-win\BOUNCE.vst3"
+          $app  = "${env:ProgramFiles}\Naaman\BOUNCE\BOUNCE.exe"
+          foreach ($f in @($vst3, $app)) { if (-not (Test-Path $f)) { throw "not installed: $f" } else { Write-Host "  ok  $f" } }
+          if ((Get-Item $vst3).Length -lt 1MB) { throw "the installed VST3 is too small to be real" }
+          $unins = Get-ChildItem "${env:ProgramFiles}\Naaman\BOUNCE" -Filter "unins*.exe" | Select-Object -First 1
+          Start-Process -FilePath $unins.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Start-Sleep -Seconds 5
+          foreach ($f in @("${env:CommonProgramFiles}\VST3\BOUNCE.vst3", $app)) { if (Test-Path $f) { throw "left behind: $f" } }
+          Write-Host "  installed and removed cleanly"
+
+      # One zip for delivery: installer + raw VST3 + manual.
+      - name: Assemble the delivery zip
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $d = "dist\BOUNCE-$v-Windows"
+          New-Item -ItemType Directory -Force -Path "$d\BOUNCE.vst3" | Out-Null
+          Copy-Item "dist\BOUNCE-$v-windows.exe" "$d\BOUNCE-$v-Setup.exe"
+          Copy-Item -Recurse "build\Bounce_artefacts\Release\VST3\BOUNCE.vst3\*" "$d\BOUNCE.vst3\"
+          Copy-Item README.md "$d\BOUNCE-MANUAL.md"
+          Copy-Item packaging\INFO-BEFORE.txt "$d\READ-ME-FIRST.txt"
+          Compress-Archive -Path $d -DestinationPath "dist\BOUNCE-$v-Windows-Setup.zip" -Force
+
+      - name: Upload the delivery zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: BOUNCE-${{ steps.ver.outputs.version }}-Windows-Setup
+          path: dist/BOUNCE-${{ steps.ver.outputs.version }}-Windows-Setup.zip
+          if-no-files-found: error

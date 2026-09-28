@@ -1,0 +1,23 @@
+BOUNCE 1.2 - by Gussa Naaman
+
+One input hit becomes a finite sequence of new hits - each with its own time, loudness and
+pitch. MOTION makes the repeats accelerate or slow down; drag the balls to edit them.
+55 factory presets in 8 categories.
+
+What is installed, and where:
+
+  VST3 plug-in    C:\Program Files\Common Files\VST3\BOUNCE.vst3
+  Standalone      C:\Program Files\Naaman\BOUNCE\BOUNCE.exe
+  Manual          C:\Program Files\Naaman\BOUNCE\BOUNCE-MANUAL.md
+
+Close Cubase (or any DAW) before installing. After installing, Cubase finds BOUNCE under
+Effects > Delay.
+
+The interface uses Microsoft Edge WebView2, which is built into Windows 10 and 11. If the
+BOUNCE window shows a message instead of its interface, install the free "WebView2 Runtime"
+from Microsoft; every control also stays available to Cubase's own parameter list.
+
+This installer is not code-signed. If Windows SmartScreen appears, choose "More info" and
+then "Run anyway".
+
+To remove it: Windows Settings > Apps > BOUNCE > Uninstall.
