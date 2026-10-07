@@ -296,3 +296,10 @@ button:focus { outline: none; }
 .value.mint { color: var(--mint); }
 .value.champ { color: var(--champ); }
 .value.lav { color: var(--lav); }
+
+/* 1.3: reverse swell and popover chips */
+.pchips { display: flex; gap: 4px; }
+#tapRev.on { color: var(--champ); border-color: rgba(216, 178, 141, 0.5); box-shadow: 0 0 8px rgba(216,178,141,.1); }
+#plot .swell { fill: url(#swellGrad); stroke: rgba(216, 178, 141, 0.6); stroke-width: 1; }
+#plot .swell.muted { opacity: 0.4; stroke-dasharray: 2 2; }
+#plot .ball.rev .ring { stroke: #cfe7c9; }

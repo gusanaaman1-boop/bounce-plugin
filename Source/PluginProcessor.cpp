@@ -26,6 +26,7 @@ BounceProcessor::BounceProcessor()
     raw.retriggerMs = apvts.getRawParameterValue (id::retriggerMs);
     raw.choke       = apvts.getRawParameterValue (id::choke);
     raw.tightMs     = apvts.getRawParameterValue (id::tightMs);
+    raw.quantize    = apvts.getRawParameterValue (id::quantize);
 
     for (int i = 0; i < numSlots; ++i)
     {
@@ -33,6 +34,7 @@ BounceProcessor::BounceProcessor()
         raw.time[(size_t) i]  = apvts.getRawParameterValue (id::tapTime (i + 1));
         raw.level[(size_t) i] = apvts.getRawParameterValue (id::tapLevelDb (i + 1));
         raw.pitch[(size_t) i] = apvts.getRawParameterValue (id::tapPitchSt (i + 1));
+        raw.reverse[(size_t) i] = apvts.getRawParameterValue (id::tapReverse (i + 1));
     }
 
     apvts.state.setProperty ("stateSchemaVersion", stateSchemaVersion, nullptr);
@@ -60,6 +62,7 @@ PatternSettings BounceProcessor::readSettings() const noexcept
     s.sourceMs    = grid4 (raw.sourceMs->load());
     s.tightMs     = grid4 (raw.tightMs->load());
     s.choke       = raw.choke->load() >= 0.5f;
+    s.quantize    = raw.quantize->load() >= 0.5f;
 
     for (size_t i = 0; i < (size_t) numSlots; ++i)
     {
@@ -67,6 +70,7 @@ PatternSettings BounceProcessor::readSettings() const noexcept
         s.time[i]    = grid6 (raw.time[i]->load());
         s.levelDb[i] = grid4 (raw.level[i]->load());
         s.pitchSt[i] = grid4 (raw.pitch[i]->load());
+        s.reverse[i] = raw.reverse[i]->load() >= 0.5f;
     }
 
     return s;
@@ -116,6 +120,7 @@ void BounceProcessor::handleTransport (int numSamples)
 
     double newBpm = fallbackBpm;
     bool fromHost = false;
+    gridValid = false;
 
     if (position.hasValue())
     {
@@ -154,10 +159,15 @@ void BounceProcessor::handleTransport (int numSamples)
             expectedPpq = *ppq + newBpm / 60.0 * numSamples / getSampleRate();
 
         wasPlaying = playing;
+
+        // The grid exists only while the host plays and reports where it is.
+        gridValid = playing && ppq.hasValue() && fromHost;
+        blockPpq = ppq.hasValue() ? *ppq : 0.0;
     }
 
     bpm.store (newBpm);
     hostBpm.store (fromHost);
+    gridAvailable.store (gridValid);
 }
 
 void BounceProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -186,6 +196,10 @@ void BounceProcessor::render (juce::AudioBuffer<float>& buffer, int start, int n
 
     engine.setDetector (grid4 (raw.thresholdDb->load()), grid4 (raw.retriggerMs->load()));
     engine.setPattern (readSettings(), bpm.load());
+    {
+        const auto samplesPerBeat = getSampleRate() * 60.0 / bpm.load();
+        engine.setGridReference (gridValid, blockPpq + (double) start / samplesPerBeat, samplesPerBeat);
+    }
     engine.setDetecting (enabled);
 
     enabledMix.setTargetValue (enabled ? 1.0f : 0.0f);

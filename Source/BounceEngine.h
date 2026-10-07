@@ -4,6 +4,7 @@
 #include "Pattern.h"
 
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <cstdint>
 #include <vector>
@@ -41,6 +42,15 @@ public:
     /** The settings and tempo a trigger in the next process() call will snapshot. The whole
         block shares one parameter snapshot, taken at its start. */
     void setPattern (const PatternSettings& s, double bpm) noexcept;
+
+    /** QUANTIZE needs the host grid: the PPQ position at the first sample of the next
+        process() call and the samples per beat. valid = false when the host gives no position. */
+    void setGridReference (bool valid, double ppqAtBlockStart, double samplesPerBeat) noexcept
+    {
+        gridValid = valid && std::isfinite (ppqAtBlockStart) && samplesPerBeat > 1.0;
+        gridPpq = ppqAtBlockStart;
+        gridSamplesPerBeat = samplesPerBeat;
+    }
 
     /** Detection on/off. Off also fades all sounding events out. */
     void setDetecting (bool shouldDetect) noexcept;
@@ -80,6 +90,7 @@ private:
         int64_t length = 0;      // output samples this tap lasts
         double  rate = 1.0;
         float   gain = 0.0f;
+        bool    reverse = false; // reads from the end of the excerpt towards its start
     };
 
     struct Event
@@ -114,6 +125,9 @@ private:
     static constexpr int historySize = 4096;   // power of two, > 8 ms at 192 kHz
     std::vector<float> history;                // historySize x 2, interleaved by channel block
     int64_t now = 0;
+
+    bool gridValid = false;
+    double gridPpq = 0.0, gridSamplesPerBeat = 24000.0;
 
     OnsetDetector detector;
     bool detecting = true;

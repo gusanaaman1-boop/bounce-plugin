@@ -30,20 +30,27 @@ namespace id
     inline constexpr const char* choke       = "choke";
     inline constexpr const char* tightMs     = "tightMs";
 
+    // 1.3 (schema 3): grid lock and per-tap reverse. Default off.
+    inline constexpr const char* quantize    = "quantize";
+
     // Point slots are 1-based in their IDs: tap1On ... tap8PitchSt.
     juce::String tapOn (int slot);
     juce::String tapTime (int slot);
     juce::String tapLevelDb (int slot);
     juce::String tapPitchSt (int slot);
+    juce::String tapReverse (int slot);     // 1.3
 }
 
 inline constexpr int numSlots = 8;
-inline constexpr int numGlobalParameters = 16;   // 14 from the V1 contract + choke, tightMs
-inline constexpr int numParameters = numGlobalParameters + 4 * numSlots;
+// 14 from the V1 contract + choke, tightMs (1.1) + quantize (1.3)
+inline constexpr int numGlobalParameters = 17;
+// On / Time / LevelDb / PitchSt per slot (V1) + Reverse per slot (1.3) = 57 in total.
+inline constexpr int numParameters = numGlobalParameters + 5 * numSlots;
 
 // The parameter version hint passed to every ParameterID. Bumped only for new parameters.
 inline constexpr int parameterVersion = 1;
 inline constexpr int parameterVersionOptions = 2;   // choke, tightMs
+inline constexpr int parameterVersionReverse = 3;   // quantize, tap{i}Reverse
 
 // Division choice order is part of saved state and automation - never reorder.
 inline constexpr int numDivisions = 8;

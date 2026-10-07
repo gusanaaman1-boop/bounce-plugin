@@ -27,8 +27,10 @@
 class BounceProcessor final : public juce::AudioProcessor
 {
 public:
-    static constexpr int stateSchemaVersion = 2;   // 2: adds choke, tightMs
-    static constexpr double tailSeconds = 20.0;
+    static constexpr int stateSchemaVersion = 3;   // 2: choke, tightMs. 3: quantize, tap{i}Reverse
+    // 20 s in the V1 spec; REVERSE (1.3) can add a swell-sized source-safety shift on top of the
+    // 16 s cap, so the worst case is ~21 s - measured by the pattern tests.
+    static constexpr double tailSeconds = 24.0;
 
     BounceProcessor();
     ~BounceProcessor() override = default;
@@ -76,6 +78,7 @@ public:
     double viewSampleRate() const noexcept  { const auto r = getSampleRate(); return r > 1000.0 ? r : 48000.0; }
     double lastBpm() const noexcept          { return bpm.load(); }
     bool   bpmFromHost() const noexcept      { return hostBpm.load(); }
+    bool   hostGridAvailable() const noexcept { return gridAvailable.load(); }
     bool   consumeClip() noexcept            { return clipped.exchange (false); }
     const bounce::BounceEngine& getEngine() const noexcept  { return engine; }
 
@@ -93,7 +96,8 @@ private:
         std::atomic<float>* repeats = nullptr, *sync = nullptr, *division = nullptr, *freeMs = nullptr;
         std::atomic<float>* motion = nullptr, *decayDb = nullptr, *pitchPathSt = nullptr;
         std::atomic<float>* sourceMs = nullptr, *thresholdDb = nullptr, *retriggerMs = nullptr;
-        std::atomic<float>* choke = nullptr, *tightMs = nullptr;
+        std::atomic<float>* choke = nullptr, *tightMs = nullptr, *quantize = nullptr;
+        std::array<std::atomic<float>*, 8> reverse {};
         std::array<std::atomic<float>*, 8> on {}, time {}, level {}, pitch {};
     } raw;
 
@@ -112,8 +116,13 @@ private:
     int64_t expectedSample = 0;
     double expectedPpq = 0.0;
 
+    // The host grid at the current block, for QUANTIZE.
+    bool gridValid = false;
+    double blockPpq = 0.0;
+
     std::atomic<double> bpm { bounce::fallbackBpm };
     std::atomic<bool> hostBpm { false };
+    std::atomic<bool> gridAvailable { false };
     std::atomic<bool> clipped { false };
     std::atomic<bool> resetPending { false };
     std::atomic<int> presetIndex { 0 };

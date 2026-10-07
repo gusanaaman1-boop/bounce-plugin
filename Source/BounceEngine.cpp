@@ -91,7 +91,20 @@ void BounceEngine::startEvent (int64_t onsetClock) noexcept
         scheduleDirty = false;
     }
 
-    const auto& s = cachedSchedule;
+    // Per-trigger copy: QUANTIZE moves this hit's taps onto the host grid from where the hit
+    // actually landed, so the shared cached schedule must stay untouched.
+    auto s = cachedSchedule;
+    if (s.quantize && gridValid)
+    {
+        const auto hitPpq = gridPpq + (double) (onsetClock - now) / gridSamplesPerBeat;
+        const auto gridBeats = s.intervalSamples / gridSamplesPerBeat;
+        if (gridBeats > 1.0e-6)
+        {
+            const auto anchor = std::round (hitPpq / gridBeats) * gridBeats;
+            applyGridOffset (s, (anchor - hitPpq) * gridSamplesPerBeat);
+        }
+    }
+
     bool anyTap = false;
     for (int i = 0; i < s.repeats; ++i)
         anyTap = anyTap || (s.taps[(size_t) i].on && s.taps[(size_t) i].gain > 0.0f);
@@ -136,9 +149,21 @@ void BounceEngine::startEvent (int64_t onsetClock) noexcept
         tap.play = i < s.repeats && plan.on && plan.gain > 0.0f && std::isfinite (plan.gain);
         tap.rate = std::isfinite (plan.rate) ? std::clamp (plan.rate, 0.5, 2.0) : 1.0;
         tap.gain = tap.play ? plan.gain : 0.0f;
-        // The excerpt's onset (index preRoll) lands exactly on onset + delay.
-        tap.start = onsetClock + plan.delaySamples - e.preRoll;
-        tap.length = (int64_t) std::ceil ((double) e.length / tap.rate);
+        tap.reverse = plan.reverse;
+        if (tap.reverse)
+        {
+            // Backwards: read from index length-1 down to 0. The transient (index preRoll) is
+            // reached exactly at onset + delay; the tail swells in before it.
+            const auto swell = (int64_t) std::llround ((double) (e.length - 1 - e.preRoll) / tap.rate);
+            tap.start = onsetClock + plan.delaySamples - swell;
+            tap.length = (int64_t) std::ceil ((double) (e.length - 1) / tap.rate) + 1;
+        }
+        else
+        {
+            // The excerpt's onset (index preRoll) lands exactly on onset + delay.
+            tap.start = onsetClock + plan.delaySamples - e.preRoll;
+            tap.length = (int64_t) std::ceil ((double) e.length / tap.rate);
+        }
 
         if (tap.play)
             e.end = std::max (e.end, tap.start + tap.length);
@@ -199,9 +224,10 @@ void BounceEngine::renderEvent (Event& e, float* const* wet, int numSamples) noe
 
         for (auto c = from; c < to; ++c)
         {
-            const auto pos = (double) (c - tap.start) * tap.rate;
+            const auto travelled = (double) (c - tap.start) * tap.rate;
+            const auto pos = tap.reverse ? (double) (e.length - 1) - travelled : travelled;
 
-            if (pos >= (double) e.length)
+            if (pos >= (double) e.length || pos < 0.0)
                 break;
 
             auto g = tap.gain;

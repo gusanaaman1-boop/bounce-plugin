@@ -30,6 +30,8 @@ struct Spec
     float retriggerMs = 90.0f;
     bool choke = false;
     float tightMs = 0.0f;
+    bool quantize = false;
+    std::array<bool, 8> reverse {};
     std::array<float, 8> levelDb {};
     std::array<float, 8> pitchSt {};
     std::array<bool, 8> on { true, true, true, true, true, true, true, true };
@@ -58,6 +60,9 @@ FactoryPreset build (const Spec& s)
     v.emplace_back (id::retriggerMs, s.retriggerMs);
     v.emplace_back (id::choke, s.choke ? 1.0f : 0.0f);
     v.emplace_back (id::tightMs, s.tightMs);
+    v.emplace_back (id::quantize, s.quantize ? 1.0f : 0.0f);
+    for (int i = 0; i < numSlots; ++i)
+        v.emplace_back (id::tapReverse (i + 1), s.reverse[(size_t) i] ? 1.0f : 0.0f);
 
     for (int i = 0; i < numSlots; ++i)
     {
@@ -264,6 +269,26 @@ std::vector<FactoryPreset> makeAll()
     { Spec s { "Tape Stop Fall" }; s.repeats = 6; s.motion = -40.0f; s.pitchPathSt = -12.0f; s.decayDb = -6.0f; s.sourceMs = 60.0f;
       s.pitchSt = { 0.0f, 0.0f, 0.0f, 0.0f, -2.0f, -4.0f, 0.0f, 0.0f }; add ("FX & DROPS", s); }
 
+    // --- 1.3: REVERSE and QUANTIZE, appended (the first 55 keep their indices).
+    { Spec s { "Swell Into Beat" }; s.repeats = 2; s.division = 2; s.decayDb = -3.0f;
+      s.reverse = { false, true, false, false, false, false, false, false }; add ("REVERSE", s); }
+    { Spec s { "Backwards Answer" }; s.repeats = 3; s.division = 2; s.decayDb = -9.0f; s.sourceMs = 120.0f;
+      s.reverse = { true, true, true, false, false, false, false, false }; add ("REVERSE", s); }
+    { Spec s { "Mirror Bounce" }; s.decayDb = -8.0f; s.tightMs = 30.0f;
+      s.reverse = { false, true, false, true, false, false, false, false }; add ("REVERSE", s); }
+    { Spec s { "Reverse Ladder" }; s.division = 2; s.decayDb = -6.0f; s.sourceMs = 80.0f;
+      s.pitchSt = { 0.0f, 3.0f, 7.0f, 12.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+      s.reverse = { true, true, true, true, false, false, false, false }; add ("REVERSE", s); }
+    { Spec s { "Suck Back Snare" }; s.repeats = 2; s.division = 0; s.decayDb = -6.0f; s.amount = 45.0f; s.sourceMs = 200.0f;
+      s.reverse = { true, false, false, false, false, false, false, false }; add ("REVERSE", s); }
+    { Spec s { "Reverse Roll" }; s.repeats = 8; s.division = 7; s.motion = 30.0f; s.decayDb = -6.0f; s.amount = 45.0f;
+      s.choke = true; s.tightMs = 15.0f;
+      s.reverse = { true, true, true, true, true, true, true, true }; add ("REVERSE", s); }
+
+    { Spec s { "Locked Grid" }; s.decayDb = -12.0f; s.quantize = true; add ("ESSENTIALS", s); }
+    { Spec s { "Locked Vocal Echo" }; s.repeats = 3; s.division = 2; s.decayDb = -10.0f; s.sourceMs = 200.0f;
+      s.thresholdDb = -30.0f; s.retriggerMs = 250.0f; s.quantize = true; add ("VOCAL & CHOPS", s); }
+
     return all;
 }
 
@@ -278,7 +303,7 @@ const std::vector<FactoryPreset>& presets()
 const juce::StringArray& getPresetCategories()
 {
     static const juce::StringArray categories { "ESSENTIALS", "ROLLS & FILLS", "PITCH", "ECHO & SPACE",
-                                                "GROOVE", "VOCAL & CHOPS", "CHOKE & TIGHT", "FX & DROPS" };
+                                                "GROOVE", "VOCAL & CHOPS", "CHOKE & TIGHT", "REVERSE", "FX & DROPS" };
     return categories;
 }
 

@@ -41,6 +41,44 @@ double masterTimeForNominal (double t, double phrase, double p, int repeats) noe
     return (double) repeats / 8.0 * u;
 }
 
+namespace
+{
+// How much later the whole pattern must move so no tap reads audio before it is captured.
+int64_t safetyDeficit (const Schedule& s) noexcept
+{
+    const auto margin = samplesFromMs (safetyMarginMs, s.sampleRate);
+    int64_t deficit = 0;
+
+    for (int i = 0; i < s.repeats; ++i)
+    {
+        const auto& tap = s.taps[(size_t) i];
+        int64_t earliest = 0;
+        if (i == 0)
+            earliest = s.sourceSamples + margin;
+        if (tap.reverse)
+            earliest = std::max (earliest, s.sourceSamples - s.preRollSamples + margin + tap.swellSamples);
+        deficit = std::max (deficit, earliest - tap.delaySamples);
+    }
+
+    return deficit;
+}
+
+void finishTimes (Schedule& s) noexcept
+{
+    s.endSamples = 0;
+    for (int i = 0; i < s.repeats; ++i)
+    {
+        const auto& tap = s.taps[(size_t) i];
+        const auto end = tap.reverse ? tap.delaySamples + (int64_t) std::ceil ((double) (s.preRollSamples + 1) / tap.rate)
+                                     : tap.delaySamples - s.preRollSamples + tap.lengthSamples;
+        s.endSamples = std::max (s.endSamples, end);
+    }
+
+    s.firstDelaySamples = s.taps[0].delaySamples;
+    s.lastDelaySamples = s.taps[(size_t) s.repeats - 1].delaySamples;
+}
+}
+
 Schedule computeSchedule (const PatternSettings& s, double sampleRate, double bpm) noexcept
 {
     Schedule out;
@@ -97,35 +135,9 @@ Schedule computeSchedule (const PatternSettings& s, double sampleRate, double bp
             t[(size_t) i] *= out.capScale;
     }
 
-    std::array<int64_t, 8> d {};
-    for (int i = 0; i < n; ++i)
-    {
-        out.taps[(size_t) i].nominalSamples = t[(size_t) i];
-        d[(size_t) i] = (int64_t) std::llround (t[(size_t) i]);
-    }
-
-    // Source safety: the whole capture must exist before the first repeat starts reading.
-    const auto earliestFirst = out.sourceSamples + samplesFromMs (safetyMarginMs, sr);
-    if (d[0] < earliestFirst)
-    {
-        out.safetyShiftSamples = earliestFirst - d[0];
-        for (int i = 0; i < n; ++i)
-            d[(size_t) i] += out.safetyShiftSamples;
-    }
-
-    // Minimum 12 ms between adjacent repeats, pushing later taps only as needed.
-    const auto minGap = samplesFromMs (minimumGapMs, sr);
-    for (int i = 1; i < n; ++i)
-    {
-        if (d[(size_t) i] < d[(size_t) i - 1] + minGap)
-        {
-            d[(size_t) i] = d[(size_t) i - 1] + minGap;
-            out.gapPushed = true;
-        }
-    }
-
     const auto decay = std::clamp ((double) finiteOr (s.decayDb, -18.0f), -36.0, 0.0);
     const auto pitchPath = std::clamp ((double) finiteOr (s.pitchPathSt, 0.0f), -12.0, 12.0);
+    out.quantize = s.quantize && s.sync;   // a free-running interval has no grid to lock to
 
     for (int i = 0; i < n; ++i)
     {
@@ -137,18 +149,62 @@ Schedule computeSchedule (const PatternSettings& s, double sampleRate, double bp
 
         tap.active = true;
         tap.on = s.on[(size_t) i];
-        tap.delaySamples = d[(size_t) i];
+        tap.nominalSamples = t[(size_t) i];
+        tap.delaySamples = (int64_t) std::llround (t[(size_t) i]);
         tap.levelDb = (float) level;
         tap.gain = tap.on ? (float) std::pow (10.0, level / 20.0) : 0.0f;
         tap.pitchSt = (float) pitch;
         tap.rate = pitch == 0.0 ? 1.0 : std::pow (2.0, pitch / 12.0);
         tap.lengthSamples = (int64_t) std::ceil ((double) out.sourceSamples / tap.rate);
-
-        out.endSamples = std::max (out.endSamples, tap.delaySamples - out.preRollSamples + tap.lengthSamples);
+        tap.reverse = s.reverse[(size_t) i];
+        // Backwards, the transient (excerpt index preRoll) lands on delaySamples and everything
+        // after it in the capture - the tail - is heard before it, as a swell.
+        tap.swellSamples = tap.reverse ? (int64_t) std::llround ((double) (out.sourceSamples - 1 - out.preRollSamples) / tap.rate) : 0;
     }
 
-    out.firstDelaySamples = d[0];
-    out.lastDelaySamples = d[(size_t) n - 1];
+    // Source safety: the whole capture must exist before a repeat starts reading it. The first
+    // tap always waits for the full capture plus 5 ms (spec 4); a reversed tap starts reading
+    // swellSamples before its time, from the END of the capture, so it needs that much more.
+    // Every tap moves by the same amount, keeping the pattern's shape.
+    out.safetyShiftSamples = safetyDeficit (out);
+    for (int i = 0; i < n; ++i)
+        out.taps[(size_t) i].delaySamples += out.safetyShiftSamples;
+
+    // Minimum 12 ms between adjacent repeats, pushing later taps only as needed.
+    const auto minGap = samplesFromMs (minimumGapMs, sr);
+    for (int i = 1; i < n; ++i)
+    {
+        auto& d = out.taps[(size_t) i].delaySamples;
+        if (d < out.taps[(size_t) i - 1].delaySamples + minGap)
+        {
+            d = out.taps[(size_t) i - 1].delaySamples + minGap;
+            out.gapPushed = true;
+        }
+    }
+
+    finishTimes (out);
     return out;
+}
+
+void applyGridOffset (Schedule& s, double offsetSamples) noexcept
+{
+    if (! std::isfinite (offsetSamples))
+        return;
+
+    const auto offset = (int64_t) std::llround (offsetSamples);
+    for (int i = 0; i < s.repeats; ++i)
+        s.taps[(size_t) i].delaySamples += offset;
+
+    // Too early to have the audio yet: later by whole grid intervals, never off the grid.
+    const auto step = std::max<int64_t> (1, (int64_t) std::llround (s.intervalSamples));
+    int64_t extra = 0;
+    if (const auto deficit = safetyDeficit (s); deficit > 0)
+        extra = (deficit + step - 1) / step * step;
+
+    for (int i = 0; i < s.repeats; ++i)
+        s.taps[(size_t) i].delaySamples += extra;
+
+    s.quantizeOffsetSamples = offset + extra;
+    finishTimes (s);
 }
 }

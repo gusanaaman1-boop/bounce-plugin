@@ -156,7 +156,8 @@ makeSlider($("s_output"), "outputDb", { bipolar: 0, valueEl: "v_output", fmt: v 
 const watched = ["repeats", "freeMs", "decayDb"];
 for (let i = 1; i <= 8; ++i) watched.push(`tap${i}Time`, `tap${i}LevelDb`, `tap${i}PitchSt`);
 for (const n of watched) { slider(n).valueChangedEvent.addListener(refresh); slider(n).propertiesChangedEvent.addListener(refresh); }
-for (const n of ["enabled", "wetOnly", "sync", "choke", ...[1, 2, 3, 4, 5, 6, 7, 8].map(i => `tap${i}On`)])
+for (const n of ["enabled", "wetOnly", "sync", "choke", "quantize",
+                 ...[1, 2, 3, 4, 5, 6, 7, 8].map(i => `tap${i}On`), ...[1, 2, 3, 4, 5, 6, 7, 8].map(i => `tap${i}Reverse`)])
   toggle(n).valueChangedEvent.addListener(refresh);
 combo("division").valueChangedEvent.addListener(refresh);
 combo("division").propertiesChangedEvent.addListener(refresh);
@@ -293,6 +294,7 @@ $("moreBtn").addEventListener("click", e => {
 });
 
 $("t_choke").addEventListener("click", () => toggle("choke").setValue(!on("choke")));
+$("t_quant").addEventListener("click", () => toggle("quantize").setValue(!on("quantize")));
 $("t_sync").addEventListener("click", () => toggle("sync").setValue(!on("sync")));
 $("t_wet").addEventListener("click", () => toggle("wetOnly").setValue(!on("wetOnly")));
 $("t_snap").addEventListener("click", () => {
@@ -328,8 +330,11 @@ function renderControls() {
 
   $("t_sync").classList.toggle("on", sync);
   $("t_choke").classList.toggle("on", on("choke"));
+  $("t_quant").classList.toggle("on", on("quantize"));
   const tight = val("tightMs");
-  const modes = [on("choke") ? "CHOKE" : "", tight >= 0.5 ? "TIGHT " + Math.round(tight) + " MS" : ""].filter(Boolean);
+  // QUANTIZE needs the host's running grid; say so instead of silently doing nothing.
+  const quant = on("quantize") ? (sync && vm && vm.grid ? "QUANTIZE" : sync ? "QUANTIZE (PLAY HOST)" : "QUANTIZE (SYNC OFF)") : "";
+  const modes = [on("choke") ? "CHOKE" : "", tight >= 0.5 ? "TIGHT " + Math.round(tight) + " MS" : "", quant].filter(Boolean);
   $("modeWord").textContent = modes.length ? "·  " + modes.join("  ·  ") : "";
   $("t_wet").classList.toggle("on", on("wetOnly"));
   $("t_snap").classList.toggle("on", snap);
@@ -407,6 +412,10 @@ plot.innerHTML = `
       <stop offset="0.62" stop-color="#80d3c1"/>
       <stop offset="1" stop-color="#d8b28d" stop-opacity="0.9"/>
     </linearGradient>
+    <linearGradient id="swellGrad" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#d8b28d" stop-opacity="0"/>
+      <stop offset="1" stop-color="#d8b28d" stop-opacity="0.26"/>
+    </linearGradient>
     <filter id="bloom" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="4"/></filter>
     <filter id="soft" x="-0.1" y="-1" width="1.2" height="3"><feGaussianBlur stdDeviation="2"/></filter>
   </defs>`;
@@ -438,10 +447,11 @@ for (let i = 0; i < 8; ++i) {
   num.textContent = String(i + 1).padStart(2, "0");
   const tag = el("text", { class: "pitchTag", y: 23 }, g);
   const stem = el("line", { class: "stem" }, gStems);
+  const swell = el("path", { class: "swell" }, gStems);
   const dorm = el("circle", { class: "dormant", r: 2.4 }, gDormant);
   const dormNum = el("text", { class: "dormantNum" }, gDormant);
   dormNum.textContent = String(i + 1).padStart(2, "0");
-  balls.push({ g, stem, dorm, dormNum, tag, x: X0, y: YB, tx: X0, ty: YB, flashUntil: 0 });
+  balls.push({ g, stem, swell, dorm, dormNum, tag, x: X0, y: YB, tx: X0, ty: YB, flashUntil: 0 });
   attachBall(i);
 }
 
@@ -532,6 +542,7 @@ function drawPlot(now) {
     const active = i < n;
     b.g.style.display = active ? "" : "none";
     b.stem.style.display = active ? "" : "none";
+    b.swell.style.display = active && tap.rev ? "" : "none";
     const dormantVisible = !active && tap.t < xMax;
     b.dorm.style.display = dormantVisible ? "" : "none";
     b.dormNum.style.display = dormantVisible ? "" : "none";
@@ -551,6 +562,16 @@ function drawPlot(now) {
     b.stem.setAttribute("x1", b.x); b.stem.setAttribute("x2", b.x);
     b.stem.setAttribute("y1", b.y + 9); b.stem.setAttribute("y2", YB);
     b.stem.classList.toggle("muted", muted);
+    b.g.classList.toggle("rev", !!tap.rev);
+
+    // REVERSE: the tail is heard before the hit - draw it as a swell rising into the ball,
+    // exactly as long as the audio's swell.
+    if (tap.rev) {
+      const sx = Math.max(X0, b.x - (tap.sw / xMax) * (X1 - X0));
+      const w = b.x - sx;
+      b.swell.setAttribute("d", `M${sx.toFixed(1)},${YB} C${(sx + w * 0.72).toFixed(1)},${YB} ${(b.x - w * 0.12).toFixed(1)},${b.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)} L${b.x.toFixed(1)},${YB} Z`);
+      b.swell.classList.toggle("muted", muted);
+    }
 
     const showPitch = i === selected || i === hovered;
     b.tag.textContent = showPitch ? fmtSt(dragging === i && dragView ? tap.st : tap.st) : "";
@@ -651,6 +672,7 @@ function renderTapPop() {
   if (selected >= vm.n) { selectBall(-1); return; }
   const tap = vm.taps[selected];
   $("tapTitle").textContent = "TAP " + String(selected + 1).padStart(2, "0");
+  $("tapRev").classList.toggle("on", !!tap.rev);
   $("tapOn").textContent = tap.on ? "ON" : "MUTED";
   $("tapOn").classList.toggle("on", tap.on);
   $("tapTime").textContent = fmtMs(dragging === selected && dragView ? dragView.t : tap.t);
@@ -673,6 +695,9 @@ function bindTapPitch(i) {
   tapPitchSlider.update();
 }
 
+$("tapRev").addEventListener("click", () => {
+  if (selected >= 0) toggle(tapName(selected, "Reverse")).setValue(!on(tapName(selected, "Reverse")));
+});
 $("tapOn").addEventListener("click", () => {
   if (selected >= 0) toggle(tapName(selected, "On")).setValue(!on(tapName(selected, "On")));
 });
@@ -804,6 +829,7 @@ function attachBall(i) {
     if (!vm) return;
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); useTap(i); openTapPop(i); return; }
     if (e.key === "m" || e.key === "M") { toggle(tapName(i, "On")).setValue(!on(tapName(i, "On"))); return; }
+    if (e.key === "r" || e.key === "R") { toggle(tapName(i, "Reverse")).setValue(!on(tapName(i, "Reverse"))); return; }
     const dt = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
     const dd = e.key === "ArrowUp" ? 1 : e.key === "ArrowDown" ? -1 : 0;
     if (!dt && !dd) return;

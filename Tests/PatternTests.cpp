@@ -130,13 +130,14 @@ TEST_CASE ("pattern", "16 s cap scales the whole set; the maximum schedule fits 
         {
             x.time[(size_t) i] = r.nextFloat();
             x.pitchSt[(size_t) i] = r.nextBool() ? -12.0f : r.nextFloat() * 24.0f - 12.0f;
+            x.reverse[(size_t) i] = r.nextBool();
         }
         x.pitchPathSt = -12.0f;
         const auto sch2 = computeSchedule (x, 48000.0, 10.0 + r.nextFloat() * 290.0);
         worst = std::max (worst, (double) sch2.endSamples / 48000.0);
     }
-    test::note ("worst-case schedule end over 4000 extreme settings: " + juce::String (worst, 3) + " s (tail 20 s)");
-    CHECK (worst < BounceProcessor::tailSeconds, "maximum pattern + -12 st 1000 ms source < 20 s tail");
+    test::note ("worst-case schedule end over 4000 extreme settings (REVERSE included): " + juce::String (worst, 3) + " s (tail 24 s)");
+    CHECK (worst < BounceProcessor::tailSeconds, "maximum pattern + -12 st 1000 ms source + reverse swell < reported tail");
 }
 
 TEST_CASE ("pattern", "effective level and pitch follow the stated formulas")
@@ -214,4 +215,41 @@ TEST_CASE ("pattern", "tempo and free mode set the interval")
     s.freeMs = 333.0f;
     sch = computeSchedule (s, 48000.0, 90.0);
     CHECK_NEAR (sch.intervalSamples, 48000.0 * 0.333, 1.0e-3, "free 333 ms");
+}
+
+TEST_CASE ("pattern", "REVERSE: the swell ends on the tap's time and the capture is ready before it starts")
+{
+    PatternSettings s;                 // 100 ms source, taps at 125/250/375/500 ms
+    s.reverse[0] = true;
+    const auto sch = computeSchedule (s, 48000.0, 120.0);
+    const auto& tap = sch.taps[0];
+    CHECK (tap.reverse && tap.swellSamples == sch.sourceSamples - 1 - sch.preRollSamples, "swell = the capture after the onset");
+    const auto readStart = tap.delaySamples - tap.swellSamples;                     // relative to the hit
+    const auto captureEnd = sch.sourceSamples - sch.preRollSamples;
+    CHECK (readStart >= captureEnd + ms (5.0, 48000.0), "the reversed tap starts reading only after the capture is complete");
+    CHECK (sch.safetyShiftSamples > 0, "a 100 ms reversed first repeat needs a shift at 1/16");
+    for (int i = 1; i < 4; ++i)
+        CHECK (sch.taps[(size_t) i].delaySamples - sch.taps[(size_t) i - 1].delaySamples == 6000, "pattern shape kept, gap " + juce::String (i));
+
+    PatternSettings t;
+    t.tightMs = 20.0f;                 // a short capture: the swell fits without moving anything
+    t.reverse[2] = true;
+    const auto sch2 = computeSchedule (t, 48000.0, 120.0);
+    CHECK (sch2.safetyShiftSamples == 0 && sch2.taps[2].delaySamples == 18000, "TIGHT reverse on tap 3 stays on its grid time");
+}
+
+TEST_CASE ("pattern", "QUANTIZE offset: every tap moves together; too early pushes by whole intervals")
+{
+    PatternSettings s;
+    s.sourceMs = 40.0f;
+    auto a = computeSchedule (s, 48000.0, 120.0);
+    applyGridOffset (a, 1200.0);       // the hit was 25 ms early: taps move 25 ms later
+    for (int i = 0; i < 4; ++i)
+        CHECK (a.taps[(size_t) i].delaySamples == 6000 * (i + 1) + 1200, "tap " + juce::String (i + 1) + " moved by the offset");
+
+    auto b = computeSchedule (s, 48000.0, 120.0);
+    applyGridOffset (b, -5000.0);      // a late hit: the first repeat would come before the capture ends
+    CHECK (b.taps[0].delaySamples >= b.sourceSamples + ms (5.0, 48000.0), "still safe");
+    CHECK ((b.taps[0].delaySamples - (6000 - 5000)) % 6000 == 0, "pushed by whole 1/16 intervals - still on the grid");
+    CHECK (b.taps[1].delaySamples - b.taps[0].delaySamples == 6000, "shape kept");
 }

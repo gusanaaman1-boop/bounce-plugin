@@ -583,3 +583,86 @@ TEST_CASE ("engine", "host suspends processing mid-hit, then plays again with a 
         rig.process (loud);
     }
 }
+
+TEST_CASE ("engine", "REVERSE: the hit lands on its time, its tail is heard BEFORE it")
+{
+    Rig rig;
+    rig.set (id::repeats, 2.0f);
+    rig.set (id::tapOn (2), 0.0f);
+    rig.set (id::decayDb, 0.0f);
+    rig.set (id::division, 2.0f);           // 1/8: tap 1 at 250 ms
+    rig.set (id::sourceMs, 60.0f);
+    rig.set (id::tapReverse (1), 1.0f);
+    rig.wetOnly();
+
+    const int hit = 2000, mark = ms (30.0, 48000.0);
+    auto buf = test::silence (2, 48000);
+    buf.setSample (0, hit, 1.0f);
+    buf.setSample (1, hit, 1.0f);
+    buf.setSample (0, hit + mark, 0.03f);    // a quiet event 30 ms into the capture
+    buf.setSample (1, hit + mark, 0.03f);
+    rig.process (buf);
+
+    const auto& sch = rig.proc.getEngine().lastSchedule();
+    const auto at = hit + (int) sch.taps[0].delaySamples;
+    CHECK (sch.safetyShiftSamples == 0 && sch.taps[0].delaySamples == 12000, "no shift needed: on the 1/8 grid");
+    CHECK (buf.getSample (0, at) == 1.0f, "the hit itself lands exactly on 250 ms");
+    CHECK_NEAR (buf.getSample (0, at - mark), 0.03, 1.0e-7, "what came 30 ms after the hit is heard 30 ms BEFORE it");
+    CHECK (buf.getSample (0, at + mark) == 0.0f, "and nothing of it after");
+
+    // At +12 st the swell halves and the hit still lands on time.
+    Rig up;
+    up.set (id::repeats, 2.0f);
+    up.set (id::tapOn (2), 0.0f);
+    up.set (id::decayDb, 0.0f);
+    up.set (id::division, 2.0f);
+    up.set (id::sourceMs, 60.0f);
+    up.set (id::tapReverse (1), 1.0f);
+    up.set (id::tapPitchSt (1), 12.0f);
+    up.wetOnly();
+    auto b2 = test::silence (2, 48000);
+    b2.setSample (0, hit, 1.0f);
+    b2.setSample (1, hit, 1.0f);
+    up.process (b2);
+    const auto peakAt = [&] (int from, int to) { int best = from; for (int i = from; i < to; ++i) if (std::abs (b2.getSample (0, i)) > std::abs (b2.getSample (0, best))) best = i; return best; };
+    CHECK (std::abs (peakAt (hit + 11000, hit + 13000) - (hit + 12000)) <= 1, "pitched reverse: peak on 250 ms (+/-1 sample)");
+}
+
+TEST_CASE ("engine", "QUANTIZE: repeats lock to the host grid wherever the hit lands")
+{
+    for (bool quantize : { false, true })
+    {
+        Rig rig;                               // playing at 120 BPM from sample 0: beats every 24000
+        rig.set (id::sourceMs, 30.0f);
+        rig.set (id::decayDb, 0.0f);
+        rig.set (id::quantize, quantize ? 1.0f : 0.0f);
+        rig.wetOnly();
+
+        const int hit = 24000 * 2 + 1440;      // 30 ms late on beat 3 (and on its 1/16 line)
+        auto buf = test::silence (2, 48000 * 3);
+        buf.setSample (0, hit, 1.0f);
+        buf.setSample (1, hit, 1.0f);
+        rig.process (buf);
+
+        const auto* x = buf.getReadPointer (0);
+        if (quantize)
+        {
+            CHECK (x[48000 + 6000] == 1.0f && x[48000 + 24000] == 1.0f, "QUANTIZE: repeats on the grid (125 / 500 ms after the beat)");
+            CHECK (x[hit + 6000] == 0.0f, "not 125 ms after the late hit");
+        }
+        else
+            CHECK (x[hit + 6000] == 1.0f && x[hit + 24000] == 1.0f, "off: repeats follow the hit");
+    }
+
+    // No host position (standalone): QUANTIZE has nothing to lock to and changes nothing.
+    Rig free;
+    free.head.provide = false;
+    free.set (id::sourceMs, 30.0f);
+    free.set (id::decayDb, 0.0f);
+    free.set (id::quantize, 1.0f);
+    free.wetOnly();
+    auto b = test::silence (2, 48000);
+    b.setSample (0, 1700, 1.0f);
+    free.process (b);
+    CHECK (b.getSample (0, 1700 + 6000) == 1.0f, "no host grid: repeats follow the hit");
+}

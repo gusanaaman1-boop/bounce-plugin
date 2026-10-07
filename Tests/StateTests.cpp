@@ -5,22 +5,24 @@
 using namespace bounce;
 using test::Rig;
 
-TEST_CASE ("state", "48 host parameters with the permanent IDs (46 V1 + 2 options)")
+TEST_CASE ("state", "57 host parameters with the permanent IDs (46 V1 + 2 options + 9 in 1.3)")
 {
     BounceProcessor p;
-    CHECK (p.getParameters().size() == numParameters && numParameters == 48, "48 parameters, got " + juce::String (p.getParameters().size()));
+    CHECK (p.getParameters().size() == numParameters && numParameters == 57, "57 parameters, got " + juce::String (p.getParameters().size()));
 
     const char* globals[] = { "enabled", "amount", "wetOnly", "outputDb", "repeats", "sync", "division", "freeMs",
-                              "motion", "decayDb", "pitchPathSt", "sourceMs", "thresholdDb", "retriggerMs", "choke", "tightMs" };
+                              "motion", "decayDb", "pitchPathSt", "sourceMs", "thresholdDb", "retriggerMs", "choke", "tightMs", "quantize" };
     for (auto* g : globals)
         CHECK (p.apvts.getParameter (g) != nullptr, juce::String ("global ") + g);
     for (int i = 1; i <= 8; ++i)
         CHECK (p.apvts.getParameter ("tap" + juce::String (i) + "On") != nullptr && p.apvts.getParameter ("tap" + juce::String (i) + "Time") != nullptr
                && p.apvts.getParameter ("tap" + juce::String (i) + "LevelDb") != nullptr && p.apvts.getParameter ("tap" + juce::String (i) + "PitchSt") != nullptr,
                "point bank slot " + juce::String (i));
+    for (int i = 1; i <= 8; ++i)
+        CHECK (p.apvts.getParameter ("tap" + juce::String (i) + "Reverse") != nullptr, "reverse slot " + juce::String (i));
 
     CHECK (p.getLatencySamples() == 0, "zero latency");
-    CHECK (p.getTailLengthSeconds() == 20.0, "20 s tail");
+    CHECK (p.getTailLengthSeconds() == 24.0, "24 s tail (20 s + REVERSE headroom)");
 
     auto* div = dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter (id::division));
     CHECK (div != nullptr && div->choices == divisionNames() && div->getIndex() == 5, "division order and 1/16 default");
@@ -37,7 +39,7 @@ TEST_CASE ("state", "48 host parameters with the permanent IDs (46 V1 + 2 option
     CHECK (! p.checkBusesLayoutSupported (l), "5.1 rejected");
 }
 
-TEST_CASE ("state", "save / restore all 48 values including dormant taps")
+TEST_CASE ("state", "save / restore all 57 values including dormant taps")
 {
     BounceProcessor a;
     juce::Random r (21);
@@ -105,6 +107,9 @@ TEST_CASE ("state", "malformed and old chunks are repaired, never reset")
     old.setProperty ("stateSchemaVersion", 1, nullptr);
     old.removeChild (old.getChildWithProperty ("id", "choke"), nullptr);
     old.removeChild (old.getChildWithProperty ("id", "tightMs"), nullptr);
+    old.removeChild (old.getChildWithProperty ("id", "quantize"), nullptr);
+    for (int i = 1; i <= 8; ++i)
+        old.removeChild (old.getChildWithProperty ("id", id::tapReverse (i)), nullptr);
     old.getChildWithProperty ("id", "motion").setProperty ("value", 42.0, nullptr);
     juce::MemoryBlock oldChunk;
     if (auto xml = old.createXml())
@@ -112,9 +117,13 @@ TEST_CASE ("state", "malformed and old chunks are repaired, never reset")
     BounceProcessor v1dst;
     v1dst.apvts.getParameter (id::choke)->setValueNotifyingHost (1.0f);
     v1dst.apvts.getParameter (id::tightMs)->setValueNotifyingHost (0.5f);
+    v1dst.apvts.getParameter (id::quantize)->setValueNotifyingHost (1.0f);
+    v1dst.apvts.getParameter (id::tapReverse (2))->setValueNotifyingHost (1.0f);
     v1dst.setStateInformation (oldChunk.getData(), (int) oldChunk.getSize());
     const auto migrated = v1dst.readSettings();
     CHECK (! migrated.choke && migrated.tightMs == 0.0f && migrated.motion == 42.0f, "schema-1 chunk: options off, values kept");
+    CHECK (! migrated.quantize && std::none_of (migrated.reverse.begin(), migrated.reverse.end(), [] (bool b) { return b; }),
+           "schema-1 chunk: QUANTIZE and every REVERSE off");
 
     // Garbage bytes: ignored, the processor keeps working.
     const char junk[] = "not a state chunk at all";
@@ -138,9 +147,9 @@ TEST_CASE ("state", "REPEATS 4 -> 8 -> 4 through the host keeps custom dormant s
     CHECK (reset && rig.get (id::repeats) == 4.0f, "Reset Pattern: all eight to i/8, REPEATS untouched");
 }
 
-TEST_CASE ("state", "55 factory presets in 8 categories load, differ audibly and stage sensibly")
+TEST_CASE ("state", "63 factory presets in 9 categories load, differ audibly and stage sensibly")
 {
-    CHECK (getNumFactoryPresets() == 55, "55 presets, got " + juce::String (getNumFactoryPresets()));
+    CHECK (getNumFactoryPresets() == 63, "63 presets, got " + juce::String (getNumFactoryPresets()));
 
     juce::StringArray seen;
     for (int i = 0; i < getNumFactoryPresets(); ++i)

@@ -8,6 +8,7 @@ juce::String tapOn (int slot)       { return "tap" + juce::String (slot) + "On";
 juce::String tapTime (int slot)     { return "tap" + juce::String (slot) + "Time"; }
 juce::String tapLevelDb (int slot)  { return "tap" + juce::String (slot) + "LevelDb"; }
 juce::String tapPitchSt (int slot)  { return "tap" + juce::String (slot) + "PitchSt"; }
+juce::String tapReverse (int slot)  { return "tap" + juce::String (slot) + "Reverse"; }
 }
 
 juce::StringArray divisionNames()
@@ -103,6 +104,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { id::tightMs, parameterVersionOptions }, "Tight",
         juce::NormalisableRange<float> (0.0f, 200.0f, 0.1f), 0.0f,
         Attr().withLabel ("ms").withStringFromValueFunction ([] (float v, int) { return v < 0.5f ? juce::String ("Off") : fmt (v, 0, " ms"); })));
+
+    // --- 1.3, appended again so nothing earlier moves.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id::quantize, parameterVersionReverse }, "Quantize", false));
+    for (int slot = 1; slot <= numSlots; ++slot)
+        layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id::tapReverse (slot), parameterVersionReverse },
+                                                                "Tap " + juce::String (slot) + " Reverse", false));
 
     return layout;
 }

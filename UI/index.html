@@ -105,6 +105,7 @@
     <div class="srow"><span class="label">OUTPUT</span><div class="slider bipolar champc" id="s_output" tabindex="0" role="slider" aria-label="Output"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value" id="v_output"></span></div>
     <div class="toggles">
       <button class="chip" id="t_choke" title="A new hit cuts the previous repeats">CHOKE</button>
+      <button class="chip" id="t_quant" title="Repeats lock to the host grid, wherever the hit lands">QUANTIZE</button>
       <button class="chip" id="t_sync">SYNC</button>
       <button class="chip" id="t_wet">WET ONLY</button>
       <button class="chip" id="t_snap">SNAP</button>
@@ -113,7 +114,7 @@
   </div>
 
   <div class="pop tap" id="tapPop">
-    <div class="phead"><span class="cap" id="tapTitle">TAP 01</span><button class="chip small" id="tapOn">ON</button></div>
+    <div class="phead"><span class="cap" id="tapTitle">TAP 01</span><span class="pchips"><button class="chip small" id="tapRev" title="Play this repeat backwards, swelling into its time (R)">REV</button><button class="chip small" id="tapOn">ON</button></span></div>
     <div class="trow"><span class="label">TIME</span><span class="value mint" id="tapTime" tabindex="0" title="Drag or use arrows">125 ms</span></div>
     <div class="trow"><span class="label">LEVEL</span><span class="value champ" id="tapLevel" tabindex="0" title="Drag or use arrows">0.0 dB</span></div>
     <div class="trow"><span class="label">PITCH</span><div class="slider bipolar lavc" id="s_tapPitch" tabindex="0" role="slider" aria-label="Tap pitch"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div><span class="value lav" id="tapPitch">0 st</span></div>

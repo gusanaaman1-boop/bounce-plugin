@@ -6,9 +6,9 @@ Built from the owner's V1 build specification (v1.2, 26 Sep 2026).
 
 ![BOUNCE at default size](docs/screenshots/01-default-stab-cascade.png)
 
-JUCE 9.0.0 · C++20 · VST3 (macOS/Windows) · AU (macOS) · Standalone · zero latency · 20 s tail.
+JUCE 9.0.0 · C++20 · VST3 (macOS/Windows) · AU (macOS) · Standalone · zero latency · 24 s tail.
 Identity (frozen): `PRODUCT_NAME "BOUNCE"`, `PLUGIN_CODE Bnce`, `PLUGIN_MANUFACTURER_CODE Naam`,
-`BUNDLE_ID com.naaman.bounce`, `stateSchemaVersion 2`.
+`BUNDLE_ID com.naaman.bounce`, `stateSchemaVersion 3`.
 
 ## Build
 
@@ -17,7 +17,7 @@ scripts/build-macos.sh
 ```
 
 Universal arm64 + x86_64, minimum macOS 10.13. Configures, builds VST3/AU/Standalone and the test
-suite, runs the tests, pluginval (strictness 10) and auval, and writes `dist/BOUNCE-1.2.0-macOS.zip`.
+suite, runs the tests, pluginval (strictness 10) and auval, and writes `dist/BOUNCE-1.3.0-macOS.zip`.
 Built plug-ins are also copied into `~/Library/Audio/Plug-Ins`.
 
 Windows: built by CI — `.github/workflows/windows.yml` (Actions → Windows → Run workflow) compiles with
@@ -63,7 +63,7 @@ input ──┬─────────────────────�
 - **Transport**: stop, seek and loop jump fade sounding events out in 5 ms. Host bypass passes audio and
   clears all events. Restoring state clears events before the next block.
 
-## Parameters (permanent IDs — 46 from the V1 contract + 2 options in 1.1 = 48)
+## Parameters (permanent IDs — 46 from the V1 contract + 2 in 1.1 + 9 in 1.3 = 57)
 
 | ID | Range / default | |
 |---|---|---|
@@ -86,12 +86,14 @@ input ──┬─────────────────────�
 | `tap{1..8}LevelDb` | −48…+6 dB · 0 | trim |
 | `tap{1..8}PitchSt` | −12…+12 st · 0 | trim |
 | `choke` *(1.1)* | off/on · off | a new hit cuts the previous hit's repeats (5 ms fade from the onset sample) |
+| `quantize` *(1.3)* | off/on · off | repeats lock to the host grid: each hit's taps move by its distance to the nearest RATE grid line (pushed by whole intervals if that would beat the capture). Needs SYNC and a playing host |
+| `tap{1..8}Reverse` *(1.3)* | off/on · off | that repeat plays the hit backwards: its transient lands on the tap's time and the tail swells in before it; source safety accounts for the swell |
 | `tightMs` *(1.1)* | 0–200 ms · 0 = off | each repeat is only the first tightMs of the hit: capture = 8 ms + tightMs, faded over its last 60 % |
 
 **Options (1.1).** CHOKE and TIGHT exist so BOUNCE can also play *rolls and ratchets* rather than echoes. Both
 default off: the 1.0 sound, the first twelve presets and every schema-1 project are unchanged (tested).
 
-## Factory presets (55, in 8 categories)
+## Factory presets (63, in 9 categories)
 
 Index order is frozen (host program number and saved preset index); new presets are only appended.
 The editor's menu shows categories on the left and that category's presets on the right; ‹ › step through
@@ -99,13 +101,14 @@ the whole list in menu order.
 
 | Category | Presets |
 |---|---|
-| ESSENTIALS | Straight Four · Tiny Double · Eighth Echo · Dotted Bounce · Triplet Taps · Quarter Answer · Sixteenth Slap |
+| ESSENTIALS | Straight Four · Tiny Double · Eighth Echo · Dotted Bounce · Triplet Taps · Quarter Answer · Sixteenth Slap · Locked Grid *(Q)* |
 | ROLLS & FILLS | Accelerating Fill · Snare Run · Snare Build 8 · Tom Rush · Slowing Roll · Half-Time Roll · Buzz Roll |
 | PITCH | Stab Cascade · Pitch Ladder Up · Pitch Ladder Down · Octave Jump · Fifth Stack · Pentatonic Fall · Wobble Tune · Dive Bomb |
 | ECHO & SPACE | Slow Falling Echo · Dark Downroll · Canyon Throw · Long Drift · Ghost Tail · Reverse Swell · Fading Stairs |
 | GROOVE | Percussion Triplets · Afro Shuffle · Clave Answer · Shaker Swing · Conga Call · Offbeat Skip · Polyrhythm 3:4 |
-| VOCAL & CHOPS | Vocal Answer · Chop Stutter · Vox Call Up · Vox Throw Down · Word Repeat · Breath Echo |
+| VOCAL & CHOPS | Vocal Answer · Chop Stutter · Vox Call Up · Vox Throw Down · Word Repeat · Breath Echo · Locked Vocal Echo *(Q)* |
 | CHOKE & TIGHT | Choke Roll · Tight Ratchet · Bouncing Ball · Hat Ratchet · Tight Double · Machine Gun · Choke Triplets · Dry Clicks |
+| REVERSE | Swell Into Beat · Backwards Answer · Mirror Bounce · Reverse Ladder · Suck Back Snare · Reverse Roll |
 | FX & DROPS | Pre-Drop Rush · Riser Ladder · Drop Stutter · Glitch Scatter · Tape Stop Fall |
 
 Every preset sets every parameter and is tested: valid tap order, no source-safety shift at 120 BPM, audibly
@@ -122,12 +125,12 @@ Settings: SOURCE, TIGHT, THRESHOLD, RETRIGGER, FREE RATE, OUTPUT, CHOKE, SYNC, W
 diagnostics (triggers / events / dropped). If the web view cannot load within 8 s, a native fallback with
 JUCE's generic editor appears.
 
-## Verification (macOS, Apple silicon, 27 Sep 2026, v1.2.0)
+## Verification (macOS, Apple silicon, 7 Oct 2026, v1.3.0)
 
 | | Result |
 |---|---|
-| Test suite (`BounceTests`) | **843 checks, 0 failed** |
-| Same suite under ASan + UBSan | 384 / 0, no sanitizer reports |
+| Test suite (`BounceTests`) | **957 checks, 0 failed** |
+| Same suite under ASan + UBSan | 957 / 0, no sanitizer reports |
 | pluginval strictness 10 | **VST3 SUCCESS, AU SUCCESS** (AU prints a "current program is -1" warning) |
 | auval `aufx Bnce Naam` | **AU VALIDATION SUCCEEDED** |
 | Timing | repeats at exactly 125/250/375/500 ms after an impulse (44.1 kHz: ±1 sample rounding) |
@@ -139,7 +142,8 @@ JUCE's generic editor appears.
 | Host variation | no playhead (120 FALLBACK), stop, seek, loop jump, tempo change with snapshot |
 | Stress | 192 kHz, 16 events × 8 taps at ±12 st: ~10 % of real time; 17th+ events dropped, finite output |
 | Normal CPU | 16th-note kicks, Stab Cascade: ~0.2 % of one core at 44.1 / 48 kHz |
-| Tail | worst of 4000 extreme random settings ends at 18.9 s (< 20 s tail) |
+| Tail | worst of 4000 extreme random settings, REVERSE included, ends at 19.9 s; theoretical worst ≈ 21 s, so 24 s is reported |
+| REVERSE / QUANTIZE | reversed hit lands exactly on its time with its tail heard before it (also at +12 st, ±1 sample); a hit 30 ms late is put back on the grid; no host grid = no effect |
 | Latency | 0 samples |
 | Memory | 16 events × 2 ch × (sr + 8 ms): ~6.2 MB at 48 kHz, ~24.7 MB at 192 kHz, all allocated in prepareToPlay |
 | CHOKE / TIGHT | choke removes earlier repeats, keeps the new hit's; TIGHT 40 ms: nothing after 40 ms, no safety shift for a 300 ms source; schema-1 chunk restores both off |

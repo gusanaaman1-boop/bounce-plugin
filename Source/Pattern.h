@@ -24,6 +24,8 @@ struct PatternSettings
     float sourceMs = 100.0f;
     float tightMs = 0.0f;        // 0 = off; else each repeat is only the hit's first tightMs
     bool  choke = false;         // a new hit cuts the repeats of the previous one
+    bool  quantize = false;      // 1.3: repeats lock to the host grid (sync mode, host position)
+    std::array<bool, 8> reverse {};   // 1.3: the tap plays the hit backwards, swelling INTO its time
 
     std::array<bool,  8> on      { true, true, true, true, true, true, true, true };
     std::array<float, 8> time    { 0.125f, 0.25f, 0.375f, 0.5f, 0.625f, 0.75f, 0.875f, 1.0f };
@@ -42,6 +44,8 @@ struct TapPlan
     float   pitchSt = 0.0f;      // effective pitch, clamped to +/-12
     double  rate = 1.0;          // varispeed playback rate 2^(pitch/12)
     int64_t lengthSamples = 0;   // how long this repeat plays: source / rate
+    bool    reverse = false;     // plays the excerpt backwards
+    int64_t swellSamples = 0;    // reverse only: how long it sounds BEFORE delaySamples
 };
 
 struct Schedule
@@ -57,6 +61,8 @@ struct Schedule
     int64_t preRollSamples = 0;
     int64_t tightSamples = 0;         // 0 = off
     bool    choke = false;
+    bool    quantize = false;
+    int64_t quantizeOffsetSamples = 0;   // set by applyGridOffset at a trigger
     int64_t safetyShiftSamples = 0;   // common shift applied so the capture is complete in time
     double  capScale = 1.0;           // < 1 when the 16 s limit compressed the pattern
     bool    gapPushed = false;        // the 12 ms minimum gap moved at least one tap
@@ -78,6 +84,11 @@ bool repairTapTimes (std::array<float, 8>& times) noexcept;
 
 /** Computes the audible schedule of one trigger. bpm <= 0 or non-finite uses fallbackBpm. */
 Schedule computeSchedule (const PatternSettings&, double sampleRate, double bpm) noexcept;
+
+/** QUANTIZE: moves every tap by offsetSamples (the hit's distance to its nearest grid line),
+    then, if that would read audio not yet captured, pushes the whole set later by whole grid
+    intervals so it stays on the grid. Recomputes first / last / end. */
+void applyGridOffset (Schedule&, double offsetSamples) noexcept;
 
 /** Inverse of the timing warp for editing: the stored master-grid time that puts a tap at
     nominal time t (samples, before any safety shift). */

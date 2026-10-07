@@ -199,12 +199,15 @@ juce::var BounceEditor::buildViewModel (BounceProcessor& proc)
         o->setProperty ("on", settings.on[(size_t) i]);
         o->setProperty ("a", active);
         o->setProperty ("len", round2 (active ? ms ((double) t.lengthSamples, sr) : 0.0));
+        o->setProperty ("rev", settings.reverse[(size_t) i]);
+        o->setProperty ("sw", round2 (active ? ms ((double) t.swellSamples, sr) : 0.0));
         taps.add (o.get());
     }
 
     juce::DynamicObject::Ptr vm (new juce::DynamicObject());
     vm->setProperty ("bpm", round2 (schedule.bpm));
     vm->setProperty ("hostBpm", proc.bpmFromHost());
+    vm->setProperty ("grid", proc.hostGridAvailable());
     vm->setProperty ("sync", settings.sync);
     vm->setProperty ("n", schedule.repeats);
     vm->setProperty ("T", round2 (ms (schedule.phraseSamples * schedule.capScale, sr)));
